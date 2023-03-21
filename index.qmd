@@ -1,11 +1,11 @@
 ---
-title: "Weekly Summary Template"
-author: "Author Name"
+title: "Weekly Summary Week 8"
+author: "Jack Benadon"
 title-block-banner: true
 title-block-style: default
 toc: true
-format: html
-# format: pdf
+# format: html
+format: pdf
 ---
 
 ---
@@ -19,27 +19,146 @@ Include a _very brief_ summary of what you learnt in this class here.
 
 Today, I learnt the following concepts in class:
 
-1. Item 1
-1. Item 2
-1. Item 3
+1. Cross Validation
+1. K-Fold Cross Validation
+1. Using the Caret package
 :::
 
 Provide more concrete details here. You can also use footenotes[^footnote] if you like
 
-```{R results='hide'}
-#| output: false
+```{R}
 library(dplyr)
 library(purrr)
+library(torch)
+library(ISLR2)
+library(tidyr)
+library(readr)
+library(glmnet)
+library(caret)
+library(car)
+```
+### Cross Validation
+
+```{R}
+df <- Boston %>% drop_na()
+head(df)
+dim(df)
+```
+### K-Fold Cross Validation
+
+```{R}
+k <- 5
+fold <- sample(1:nrow(df), nrow(df)/k)
+fold #generating one of the folds
 ```
 
+```{R}
+train <- df %>% slice(-fold) #training is everything that is not in the slice
+test <- df %>% slice(fold) #testing data is just the single fold
+nrow(test) + nrow(train) - nrow(df)
+```
 
-For example: 
-in class we learnt we learnt about the `map` function from the `purrr` package. 
+```{R}
+model <- lm(medv ~ ., data = train)
+summary(model)
+```
+```{R}
+y_test <- predict(model, newdata = test)
+mspe <- mean((test$medv - y_test)^2)
+mspe # mean squared prediction error
+```
 
+### K-Fold Cross Validation
+```{R}
+k <- 5
+folds <- sample(1:k, nrow(df), replace = T)
+folds
+```
+```{R}
+df_folds <- list()
+for (i in 1:k){
+df_folds[[i]] <- list()
+df_folds[[i]]$train = df[which(folds != i), ]
+df_folds[[i]]$test = df[which(folds == i), ]
+}
+nrow(df_folds[[2]]$train) + nrow(df_folds[[2]]$test) - nrow(df)
+```
 
-```{R results='hide', fig.width=7, fig.height=7}
-par(mfrow=c(3, 3), mar=c(3.5, 3.5, 2, 1), mgp=c(2.4, 0.8, 0))
-map(1:9, function(i)rnorm(1000) %>% hist(., main=i, col=i))
+```{R}
+nrow(df_folds[[3]]$train) + nrow(df_folds[[3]]$test) - nrow(df)
+```
+
+```{R}
+kfold_mspe <- c()
+for (i in 1:k) {
+model <- lm(medv ~ ., df_folds[[i]]$train)
+y_hat <- predict(model, df_folds[[i]]$test)
+kfold_mspe[i] <- mean((y_hat - df_folds[[i]]$test$medv)^2)
+}
+kfold_mspe
+```
+
+### Wrapped in a function
+```{R}
+make_folds <- function(df, k){
+folds <- sample(1:k, nrow(df), replace = T)
+df_folds <- list()
+for (i in 1:k){
+df_folds[[i]] <- list()
+df_folds[[i]]$train = df[which(folds != i), ]
+df_folds[[i]]$test = df[which(folds == i), ]
+}
+return(df_folds)
+}
+cv_mspe <- function(formula, df_folds){
+kfold_mspe <- c()
+for (i in 1:length(df_folds)){
+model <- lm(formula, df_folds[[i]]$train)
+y_hat <- predict(model, df_folds[[i]]$test)
+kfold_mspe[i] <- mean((y_hat - df_folds[[i]]$test$medv)^2)
+}
+return(mean(kfold_mspe))
+}
+df_folds <- make_folds(df, 5)
+cv_mspe(medv ~ ., df_folds)
+```
+
+```{R}
+cv_mspe(medv ~ 1, df_folds)
+```
+
+### Using the caret package
+Define the training control for the cross validation
+```{R}
+ctrl <- trainControl(method = "cv", number = 5)
+model <- train(medv ~ ., data = df, method = "lm", trControl = ctrl)
+summary(model)
+```
+```{R}
+predictions <- predict(model, df)
+```
+
+### Caret for LASSO
+Bias variance tradeoff
+
+```{R}
+ctrl <- trainControl(method = "cv", number = 5)
+# Define the tuning grid
+grid <- expand.grid(aalpha = 1, lambda = seq(0, 0.5, by =0.001))
+# Train the model using Lasso regression with cross-validation
+# lasso_fit <- train(
+# medv ~ .,
+# data = df,
+# method = "glmnet",
+# trControl = ctrl,
+# tuneGrid = grid,
+# standardize = TRUE,
+# family = "gaussian"
+# )
+#
+# plot(lasso_fit)
+
+# I couldn't get this code to run so in order to render it correctly I had to comment it out.
 ```
 
 
@@ -55,22 +174,143 @@ Include a _very brief_ summary of what you learnt in this class here.
 
 Today, I learnt the following concepts in class:
 
-1. Item 1
-1. Item 2
-1. Item 3
+1. Classification
+1. Log-odds
+1. Logistic regression using the torch library
 :::
 
 Provide more concrete details here, e.g., 
 
-In class we learnt how to use the `map` function to create multiple regression diagnostic plots
 
-```{R results='hide', fig.height=4}
-par(mfcol=c(2, 3), mar=c(3.5, 3.5, 2, 1), mgp=c(2.4, 0.8, 0))
-mtcars %>%
-  split(.$cyl) %>%
-  map(~ lm(mpg ~ wt, data = .x)) %>%
-  map(function(x)plot(x, which=c(1, 2)))
+$$
+\boxed{y = \beta_0 + \beta_1 x_1 + \dots \beta x_p}
+$$
+
+We're going to move from continuous responses to categorical responses
+
+
+### Classification
+
+
+```{R}
+url <- "https://archive.ics.uci.edu/ml/machine-learning-databases/breast-cancer-wisconsin/wdbc.data"
+col_names <- c("id", "diagnosis", paste0("feet", 1:30))
+df <- read_csv(url, col_names = cols()
+               )  #%>%
+  # select(-id) %>%
+  # mutate(outcome = ifelse(diagnosis == ))
+```
+
+```{R}
+n <- 100
+new_patients <- data.frame(matrix(rnorm(30 * n), nrow = n))
+colnames(new_patients) <- paste0("feet", 1:30)
+new_prediction <- predict(reg_model, newdata = new_patients, type = "response")
+```
+
+```{R}
+print(new_predictions %>% head())
+```
+
+```{R}
+boxplot(new_predictions)
+```
+
+### What are odds?
+
+Odds = $\frac{p}{(1-p)}$
+
+The formula above is the probability of our outcome happening divided by the probability of it not happening.
+
+Odds = the chances of an event occurring 
+
+log-odds(p) = log(odds) = $log(\frac{p}{(1-p)})$
+
+log-odds let us specify a regression model that uses predictions on a scale from negative infinity to positive infinity rather than using probability which is between 0 and 1.
+
+
+
+$$
+\begin{aligned}
+lo(p(x)) = b_0 + b_1 x \\
+p(x) = \frac{1}{1 + \ exp(\beta_0 + \beta_1 x)}
+\end{aligned}
+$$
+
+
+
+#### Logistic regression example
+
+The glm() function fits a generalized linear model, which includes logistic regression as a special case
+
+```{R}
+set.seed(123)
+x <- rnorm(100)
+y <- rbinom(100, size = 1, prob = exp(0.5 + 0.8*x)/(1 + exp(0.5 + 0.8*x)))
 ```
 
 
+
+```{R}
+model <- glm(y ~ x, family = binomial())
+summary(model)
+```
+
+```{R}
+x_test = -5.5
+sigmoid(coef(model)[1] + coef(model)[2] * x_test)
+```
+
+
+```{R}
+predict(model, newdata = data.frame(x=x_test), type = "response")
+```
+
+```{R}
+new_x <- seq(-2, 2, by = 0.1)
+p1 <- predict(model, data.frame(x=new_x))
+p2 <- predict(model, data.frame(x=new_x), type = "response")
+```
+
+```{R}
+boxplot(p1, p2)
+```
+
+
+### Logistic regression using the torch library
+
+Now that we have the torch library installed, we can perform logistic regression using the following steps:
+
+1. Convert the data to a tensor
+2. Define the model architecture
+3. Define the loss function
+4. Define the optimizer
+5. Train the model
+6. Make predictions
+
+
+```{R}
+X <- cbind(x)
+x_tensor <- torch_tensor(X, dtype = torch_float())
+y_tensor <- torch_tensor(y, dtype = torch_float())
+```
+
+```{R}
+module <- nn_module(
+  "logistic regression",
+  initialize = function() {
+    self$fc1 <- nn_linear(1, 1)  # "fc" stand for "fully connected"
+    self$fc2 <- nn_sigmoid()
+  },
+  forward = function(x) {
+    x %>%
+      self$fc1() %>%
+      self$fc2()
+  }
+)
+```
+
+```{R}
+logistic_reg <- module()
+```
 [^footnote]: You can include some footnotes here
